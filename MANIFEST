@@ -1,0 +1,11 @@
+Abstract.pm
+BUGS
+Changes
+MANIFEST
+Makefile.PL
+README
+TODO
+t/2-dbix-abstract.t
+t/dbia.config
+THANKS
+META.yml                                 Module meta-data (added by MakeMaker)

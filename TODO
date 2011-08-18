@@ -1,0 +1,5 @@
+** Work is now underway on a significantly different 1.1 branch.  While it
+doesn't have any major API changes, all of its SQL generation has been
+farmed out to a seperate module.  Additionally, some depricated features are
+being dropped.  Significant testing will occur before it hits CPAN.  Till
+then it can be found at Source Forge.
