@@ -1,4 +1,3 @@
-# $Id: Abstract.pm,v 1.14 2005/04/23 12:38:15 daerr Exp $
 package DBIx::Abstract;
 
 use DBI;
@@ -1539,11 +1538,11 @@ Test::Simple in the prerequisites.
 
 =head1 AUTHOR
 
-Andrew Turner <turnera@cpan.org>
+Rebecca Turner <winter@cpan.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Portions copyright 2001-2002 by Andrew Turner
+Portions copyright 2001-2002,2011 by Rebecca Turner
 
 Portions copyright 2000-2001 by Adelphia Business Solutions
 

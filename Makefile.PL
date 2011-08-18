@@ -81,7 +81,7 @@ WriteMakefile(
     'clean'       => {FILES=>'config.pl t/3.t test.log'},
     ($ExtUtils::MakeMaker::VERSION >= 5.43 ?
       (ABSTRACT_FROM => 'Abstract.pm', # retrieve abstract from module
-       AUTHOR        => 'Andy Turner <turnera@cpan.org>') : ()),
+       AUTHOR        => 'Rebecca Turner <winter@cpan.org>') : ()),
 );
 
 sub Configure {
