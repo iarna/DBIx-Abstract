@@ -1,946 +1,1045 @@
 # ABSTRACT: DBI SQL abstraction
 package DBIx::Abstract;
-
 use DBI;
 use Scalar::Util 'weaken';
+use Check::ISA qw( obj_does );
 use strict;
 use warnings;
-use vars qw( $AUTOLOAD $VERSION $LAST_CHANGE );
 
-BEGIN {
-  $DBIx::Abstract::VERSION = '1.006';
-  ($DBIx::Abstract::CVSVERSION) = q$Revision: 1.14 $ =~ /(\d+\.[\d.]+)/;
-  ($DBIx::Abstract::LAST_CHANGE) =
-    q$Date: 2005/04/23 12:38:15 $ =~ /(\d+\/\S+ \d+:\S+)/;
-}
+our $AUTOLOAD;
 
 sub ___drivers {
-  my($driver,$config) = @_;
-  my %drivers = (
-    # Feel free to add new drivers... note that some DBD data_sources
-    # do not translate well (eg Oracle).
-    mysql       => "dbi:mysql:$$config{dbname}:$$config{host}:$$config{port}",
-    msql        => "dbi:msql:$$config{dbname}:$$config{host}:$$config{port}",
-    # According to DBI, drivers should use the below if they have no
-    # other preference.  It is ODBC style.
-    DEFAULT     => "dbi:$driver:"
+    my ( $driver, $config ) = @_;
+    my %drivers = (
+
+        # Feel free to add new drivers... note that some DBD data_sources
+        # do not translate well (eg Oracle).
+        mysql => "dbi:mysql:$config->{dbname}:$config->{host}:$config->{port}",
+        msql  => "dbi:msql:$config->{dbname}:$config->{host}:$config->{port}",
+
+        # According to DBI, drivers should use the below if they have no
+        # other preference.  It is ODBC style.
+        DEFAULT => "dbi:$driver:"
     );
 
-  # Make Oracle look a little bit like other DBs.
-  # Right now we only have one hack, but I can imagine there being
-  # more...
-  if ($driver eq 'Oracle') {
-    $$config{'sid'} ||= delete($$config{'dbname'});
-  }
+    # Make Oracle look a little bit like other DBs.
+    # Right now we only have one hack, but I can imagine there being
+    # more...
+    if ( $driver eq 'Oracle' ) {
+        $config->{'sid'} ||= delete( $config->{'dbname'} );
+    }
 
-  my @keys;
-  foreach (keys(%$config)) {
-    next if /^user$/;
-    next if /^password$/;
-    next if /^driver$/;
-    push(@keys,"$_=$$config{$_}");
-  }
-  $drivers{'DEFAULT'} .= join(';',@keys);
-  if ($drivers{$driver}) {
-    return $drivers{$driver};
-  } else {
-    return $drivers{'DEFAULT'};
-  }
-}
-
-sub new {
-  my($class) = @_;
-  warn "Calling the new method?  You probably didn't mean to...";
-  return bless({},$class);
+    my @keys;
+    foreach ( keys(%$config) ) {
+        next if /^user$/;
+        next if /^password$/;
+        next if /^driver$/;
+        push( @keys, "$_=$config->{$_}" );
+    }
+    $drivers{'DEFAULT'} .= join( ';', @keys );
+    if ( $drivers{$driver} ) {
+        return $drivers{$driver};
+    }
+    else {
+        return $drivers{'DEFAULT'};
+    }
 }
 
 sub connect {
-  my($class,$config,$options) = @_;
-  my($dbh,$data_source,$user,$pass,$driver,$dbname,$host,$port);
-  my $self = {};
-  
-  if (!defined($config)) {
-    die "DBIx::Abstract->connect A connection configuration must be provided.";
-  } elsif (ref($config) eq 'HASH') {
-    if ($$config{'dbh'}) {
-        $dbh = $$config{'dbh'};
-    } else {
-      $user = $$config{'user'} || $$config{'username'};
-      $pass = $$config{'password'} || $$config{'pass'};
-      if (!defined($$config{'user'}) && $$config{'password'}) {
-        $pass = undef;
-      }
-      if (exists($$config{'dsn'})) {
-        $data_source = $$config{'dsn'};
-      } else {
-        $driver = $$config{'driver'} || 'mysql'; # Because it's what I use
+    my $class = shift;
+    my ( $config, $options ) = @_;
+    my ( $dbh, $data_source, $user, $pass, $driver, $dbname, $host, $port );
+    my $self = {};
 
-        # Forcing these to be passed, one way or another, seems odd to me.
-        # To me it seems like it would be better to not pass them at all, if
-        # they weren't passed to us.  However I suspect that this is here
-        # to fix some obscure bug that I can no longer remember.
-        $dbname = $$config{'dbname'} || $$config{'db'} || ''; 
-        $host   = $$config{'host'} || '';
-        $port   = $$config{'port'} || '';
-
-        $data_source = ___drivers($$config{'driver'},{
-          %$config,
-          driver => $driver,
-          dbname => $dbname,
-          host   => $host,
-          port   => $port,
-          });
-      }
+    if ( !defined($config) ) {
+        require Carp;
+        Carp::croak( "DBIx::Abstract->connect A connection configuration must be provided." );
     }
-  } elsif (UNIVERSAL::isa($config,'DBI::db')) {
-    $dbh = $config;
-  } elsif (ref($config)) {
-    die "DBIx::Abstract->connect Config must be a hashref or a DBI object, not a ".ref($config)."ref\n";
-  } else {
-    warn "DBIx::Abstract->connect Config should be hashref or a DBI object.  Using scalar is deprecated.\n";
-    $data_source = $config;
-    $config = {};
-  }
+    elsif ( ref($config) eq 'HASH' ) {
+        if ( $config->{'dbh'} ) {
+            $dbh = $config->{'dbh'};
+        }
+        else {
+            $user = $config->{'user'}     || $config->{'username'};
+            $pass = $config->{'password'} || $config->{'pass'};
+            if ( !defined( $config->{'user'} ) && $config->{'password'} ) {
+                $pass = undef;
+            }
+            if ( exists( $config->{'dsn'} ) ) {
+                $data_source = $config->{'dsn'};
+            }
+            else {
+                $driver = $config->{'driver'} || 'mysql';
 
-  if ($data_source) {
-    $dbh = DBI->connect($data_source,$user,$pass);
-  } elsif (!$dbh) {
-    die "Could not understand data source.\n";
-  }
+                # Forcing these to be passed, one way or another, seems odd
+                # to me.  To me it seems like it would be better to not pass
+                # them at all, if they weren't passed to us.  However I
+                # suspect that this is here to fix some obscure bug that I
+                # can no longer remember.
+                $dbname = $config->{'dbname'} || $config->{'db'} || '';
+                $host   = $config->{'host'}   || '';
+                $port   = $config->{'port'}   || '';
 
-  if (!$dbh) { return 0 }
-  bless($self, $class);
-  if (ref($config) eq 'HASH' and !$$config{'dbh'}) {
-    $self->{'connect'} = {
-      driver              => $$config{'driver'},
-      dbname              => $$config{'dbname'},
-      host                => $$config{'host'},
-      port                => $$config{'port'},
-      user                => $user,
-      password            => $pass,
-      data_source         => $data_source,
-    };
-  } else {
-    $self->{'connect'} = { dbh => 1 };
-  }
-  $self->{'dbh'} = $dbh;
-  $self->opt(loglevel=>0);
-  foreach (keys(%$options)) {
-    $self->opt($_,$$options{$_});
-  }
-  my @log;
-  if (exists($$config{'dsn'})) {
-    push(@log,'dsn=>'.$data_source) if defined($data_source);
-  } elsif (ref($config) eq 'HASH') {
-    foreach (qw( driver host port db )) {
-      push(@log,$_.'=>'.$$config{$_}) if defined($$config{$_});
+                $data_source = ___drivers(
+                    $config->{'driver'}, {
+                        %$config,
+                        driver => $driver,
+                        dbname => $dbname,
+                        host   => $host,
+                        port   => $port,
+                    }
+                );
+            }
+        }
     }
-  }
-  push(@log,'user=>',$user) if defined($user);
-  push(@log,'password=>',$pass) if defined($pass);
-  $self->__logwrite(5,'Connect',@log);
-  $self->{'Active'} = 1;
-  return $self;
+    elsif ( obj_does( $config, 'DBI::db' ) ) {
+        $dbh = $config;
+    }
+    elsif ( ref($config) ) {
+        die "DBIx::Abstract->connect Config must be a hashref or a DBI object, not a "
+          . ref($config) . "ref\n";
+    }
+    else {
+        warn "DBIx::Abstract->connect Config should be hashref or a DBI object.  Using scalar is deprecated.\n";
+        $data_source = $config;
+        $config      = {};
+    }
+
+    if ($data_source) {
+        $dbh = DBI->connect( $data_source, $user, $pass );
+    }
+    elsif ( !$dbh ) {
+        die "Could not understand data source.\n";
+    }
+
+    if ( !$dbh ) { return 0 }
+    bless( $self, $class );
+    if ( ref($config) eq 'HASH' and !$config->{'dbh'} ) {
+        $self->{'connect'} = {
+            driver      => $config->{'driver'},
+            dbname      => $config->{'dbname'},
+            host        => $config->{'host'},
+            port        => $config->{'port'},
+            user        => $user,
+            password    => $pass,
+            data_source => $data_source,
+        };
+    }
+    else {
+        $self->{'connect'} = { dbh => 1 };
+    }
+    $self->{'dbh'} = $dbh;
+    $self->opt( loglevel => 0 );
+    foreach ( keys(%$options) ) {
+        $self->opt( $_, $$options{$_} );
+    }
+    my @log;
+    if ( exists( $config->{'dsn'} ) ) {
+        push( @log, 'dsn=>' . $data_source ) if defined($data_source);
+    }
+    elsif ( ref($config) eq 'HASH' ) {
+        foreach (qw( driver host port db )) {
+            push( @log, $_ . '=>' . $config->{$_} ) if defined( $config->{$_} );
+        }
+    }
+    push( @log, 'user=>',     $user ) if defined($user);
+    push( @log, 'password=>', $pass ) if defined($pass);
+    $self->__logwrite( 5, 'Connect', @log );
+    $self->{'Active'} = 1;
+    return $self;
 }
 
 sub ensure_connection {
-  my($self) = @_;
-  my $result = 0;
-  my $connected = $self->connected;
-  if ($self->connected) {
-    eval { ($result) = $self->select('1')->fetchrow_array };
-    eval { $self->disconnect unless $result };
-  }
-  unless ($result) {
-    $result = $self->reconnect;
-  }
-  if ($result) {
-    if ($result == 1) {
-      $self->__logwrite(5,'ensure_connection','functioning');
-    } elsif ($connected) {
-      $self->__logwrite(5,'ensure_connection','failed; reestablished');
-    } else {
-      $self->__logwrite(5,'ensure_connection','reestablished');
+    my $self = shift;
+    my $result    = 0;
+    my $connected = $self->connected;
+    if ( $self->connected ) {
+        eval { ($result) = $self->select('1')->fetchrow_array };
+        eval { $self->disconnect unless $result };
     }
-  } else {
-    if ($connected) {
-      $self->__logwrite(0,'ensure_connection','failed; could not reestablish');
-    } else {
-      $self->__logwrite(0,'ensure_connection','could not reestablish');
+    unless ($result) {
+        $result = $self->reconnect;
     }
-    die "Could not ensure connection.\n";
-  }
-  return $self;
+    if ($result) {
+        if ( $result == 1 ) {
+            $self->__logwrite( 5, 'ensure_connection', 'functioning' );
+        }
+        elsif ($connected) {
+            $self->__logwrite( 5, 'ensure_connection',
+                'failed; reestablished' );
+        }
+        else {
+            $self->__logwrite( 5, 'ensure_connection', 'reestablished' );
+        }
+    }
+    else {
+        if ($connected) {
+            $self->__logwrite( 0, 'ensure_connection',
+                'failed; could not reestablish' );
+        }
+        else {
+            $self->__logwrite( 0, 'ensure_connection',
+                'could not reestablish' );
+        }
+        die "Could not ensure connection.\n";
+    }
+    return $self;
 }
 
 sub connected {
-  my $self = shift;
-  my $connected;
-  # Some drivers (mysqlPP) don't properly record their Active status.
-  if ($self->{'dbh'}->{'Driver'}->{'Name'} eq 'mysqlPP') {
-    $connected = eval { ($self->{'dbh'} and $self->{'Active'}) };
-  } else {
-    $connected = eval { ($self->{'dbh'} and $self->{'dbh'}->{'Active'}) };
-  }
-  $connected = 0 if $@;
-  $self->__logwrite(5,'connected',$connected);
-  return $connected;
+    my $self = shift;
+    my $connected;
+
+    # Some drivers (mysqlPP) don't properly record their Active status.
+    if ( $self->{'dbh'}->{'Driver'}->{'Name'} eq 'mysqlPP' ) {
+        $connected = eval { ( $self->{'dbh'} and $self->{'Active'} ) };
+    }
+    else {
+        $connected = eval { ( $self->{'dbh'} and $self->{'dbh'}->{'Active'} ) };
+    }
+    $connected = 0 if $@;
+    $self->__logwrite( 5, 'connected', $connected );
+    return $connected;
 }
 
 sub reconnect {
-  my($self) = @_;
-  my $dbh;
-  if (!$self->connected and $self->{'connect'}{'data_source'}) {
-    $dbh = DBI->connect(
-      $self->{'connect'}{'data_source'},
-      $self->{'connect'}{'user'},
-      $self->{'connect'}{'password'});
-  }
-  if (!$dbh) {
-    $self->__logwrite(5,'reconnect','fail');
-    return 0;
-  }
-  $self->__logwrite(5,'reconnect','success');
-  $self->{'dbh'} = $dbh;
+    my $self = shift;
+    my $dbh;
+    if ( !$self->connected and $self->{'connect'}{'data_source'} ) {
+        $dbh = DBI->connect(
+            $self->{'connect'}{'data_source'},
+            $self->{'connect'}{'user'},
+            $self->{'connect'}{'password'}
+        );
+    }
+    if ( !$dbh ) {
+        $self->__logwrite( 5, 'reconnect', 'fail' );
+        return 0;
+    }
+    $self->__logwrite( 5, 'reconnect', 'success' );
+    $self->{'dbh'} = $dbh;
 
-  my @tolog;
-  foreach (qw( host port dbname user password )) {
-    push(@tolog, $self->{'connect'}{$_}) if $self->{'connect'}{$_};
-  }
-  $self->__logwrite(5,'Reconnect',@tolog);
-  $self->{'Active'} = 1;
-  return $self;
+    my @tolog;
+    foreach (qw( host port dbname user password )) {
+        push( @tolog, $self->{'connect'}{$_} ) if $self->{'connect'}{$_};
+    }
+    $self->__logwrite( 5, 'Reconnect', @tolog );
+    $self->{'Active'} = 1;
+    return $self;
 }
 
 sub DESTROY {
-  my $self = shift;
-  if (exists($self->{'DESTRUCTION'}) and $self->{'DESTRUCTION'}) {
-    return -1;
-  }
-  $self->{'DESTRUCTION'} = 1 ;
-  if (!$self->{'ORIG'}) {
-    if ($self->{'CLONES'}) {
-      foreach (@{$self->{'CLONES'}}) {
-        if (ref($_)) {
-          if ($_->DESTROY == -1) {
-            warn "Error: DBIx::Abstract tried to recurse into $_ from $self during DESTROY \n";
-          }
-        } else {
-           # Shouldn't be possible to get here... but Perl's destruction is
-           # a bit weird.  I guess I wouldn't expect less from the
-           # apocalypse.
-#          warn "Error: DBIx::Abstract clone not object\n";
-        }
-        $_=undef;
-      }
+    my $self = shift;
+    if ( exists( $self->{'DESTRUCTION'} ) and $self->{'DESTRUCTION'} ) {
+        return -1;
     }
-    $self->{'sth'}->finish if ref($self->{'sth'});
+    $self->{'DESTRUCTION'} = 1;
+    if ( !$self->{'ORIG'} ) {
+        if ( $self->{'CLONES'} ) {
+            foreach ( @{ $self->{'CLONES'} } ) {
+                if ( ref($_) ) {
+                    if ( $_->DESTROY == -1 ) {
+                        warn
+"Error: DBIx::Abstract tried to recurse into $_ from $self during DESTROY \n";
+                    }
+                }
+                else {
 
-    # Close our handle if we opened it and its still around
-    if (!$self->{'connect'}{'dbh'} and defined($self->{'dbh'})) {
-        $self->{'dbh'}->disconnect;
+                # Shouldn't be possible to get here... but Perl's destruction is
+                # a bit weird.  I guess I wouldn't expect less from the
+                # apocalypse.
+                #          warn "Error: DBIx::Abstract clone not object\n";
+                }
+                $_ = undef;
+            }
+        }
+        $self->{'sth'}->finish if ref( $self->{'sth'} );
+
+        # Close our handle if we opened it and its still around
+        if ( !$self->{'connect'}{'dbh'} and defined( $self->{'dbh'} ) ) {
+            $self->{'dbh'}->disconnect;
+        }
     }
-  } else {
-    my $new = [];
-    foreach (@{$self->{'ORIG'}->{'CLONES'}}) {
-      if (defined($_) and ref($_) and $self ne $_) {
-        push(@$new,$_);
-      }
+    else {
+        my $new = [];
+        foreach ( @{ $self->{'ORIG'}->{'CLONES'} } ) {
+            if ( defined($_) and ref($_) and $self ne $_ ) {
+                push( @$new, $_ );
+            }
+        }
+        $self->{'ORIG'}->{'CLONES'} = $new;
     }
-    $self->{'ORIG'}->{'CLONES'} = $new;
-  }
-  $self->{'sth'}->finish if ref($self->{'sth'});
+    $self->{'sth'}->finish if ref( $self->{'sth'} );
 ## Apparently this can cause $self->{'dbh'} to be deleted prior to
 ## disconnect being called.  Bleah.
-#  delete($self->{'dbh'});
-  delete($self->{'sth'});
-#  delete($self->{'connect'});
-  delete($self->{'options'});
-  delete($self->{'MODQUERY'});
-  delete($self->{'ORIG'});
-  delete($self->{'CLONES'});
-  return 0;
+    #  delete($self->{'dbh'});
+    delete( $self->{'sth'} );
+
+    #  delete($self->{'connect'});
+    delete( $self->{'options'} );
+    delete( $self->{'MODQUERY'} );
+    delete( $self->{'ORIG'} );
+    delete( $self->{'CLONES'} );
+    return 0;
 }
 
 sub clone {
-  my $self = shift;
-  my $class = ref($self);
-  my $newself = {%$self};
-  delete($$newself{'CLONES'});
-  delete($$newself{'ORIG'});
-  bless $newself, $class;
-  if (!$self->{'ORIG'}) {
-    $newself->{'ORIG'} = $self;
-  } else {
-    $newself->{'ORIG'} = $self->{'ORIG'};
-  }
-  weaken($newself->{'ORIG'});
+    my $self    = shift;
+    my $class   = ref($self);
+    my $newself = {%$self};
+    delete( $$newself{'CLONES'} );
+    delete( $$newself{'ORIG'} );
+    bless $newself, $class;
+    if ( !$self->{'ORIG'} ) {
+        $newself->{'ORIG'} = $self;
+    }
+    else {
+        $newself->{'ORIG'} = $self->{'ORIG'};
+    }
+    weaken( $newself->{'ORIG'} );
 
-  push(@{$newself->{'ORIG'}->{'CLONES'}},$newself);
-  weaken($newself->{'ORIG'}->{'CLONES'}[$#{$newself->{'ORIG'}->{'CLONES'}}]);
+    push( @{ $newself->{'ORIG'}->{'CLONES'} }, $newself );
+    weaken(
+        $newself->{'ORIG'}->{'CLONES'}[ $#{ $newself->{'ORIG'}->{'CLONES'} } ]
+    );
 
-  $self->__logwrite(5,'Cloned');
-  return $newself;
+    $self->__logwrite( 5, 'Cloned' );
+    return $newself;
 }
 
-my %valid_opts = map( {$_=>1} qw(
-  loglevel logfile saveSQL useCached delaymods
-  ));
+my %valid_opts = map( { $_ => 1 } qw(
+      loglevel logfile saveSQL useCached delaymods
+      ) );
+
 sub opt {
-  my($self,$key,$value) = @_;
-  if (ref($key)) {
-    $value = $$key{'value'};
-    $key = $$key{'key'};
-  }
-  my $ret;
-  if ($valid_opts{$key}) {
-    $ret = $self->{'options'}{$key};
-  } elsif (exists($self->{'dbh'}{$key})) {
-    $ret = $self->{'dbh'}{$key};
-  } else {
-    die "DBIx::Abstract->opt Unknown option $key\n";
-  }
-  if (defined($value)) {
-    if ($valid_opts{$key}) { 
-      $self->{'options'}{$key} = $value;
-    } else {
-      eval { $self->{'dbh'}->{$key} = $value };
-      if ($@) {
-        warn $@;
-        return $ret;
-      }
+    my $self = shift;
+    my ( $key, $value ) = @_;
+    if ( ref($key) ) {
+        $value = $$key{'value'};
+        $key   = $$key{'key'};
     }
-    $self->__logwrite(5,'Option change',$key?$key:'',$ret?$ret:'',$value?$value:'');
-  }
-  return $ret;
+    my $ret;
+    if ( $valid_opts{$key} ) {
+        $ret = $self->{'options'}{$key};
+    }
+    elsif ( exists( $self->{'dbh'}{$key} ) ) {
+        $ret = $self->{'dbh'}{$key};
+    }
+    else {
+        die "DBIx::Abstract->opt Unknown option $key\n";
+    }
+    if ( defined($value) ) {
+        if ( $valid_opts{$key} ) {
+            $self->{'options'}{$key} = $value;
+        }
+        else {
+            eval { $self->{'dbh'}->{$key} = $value };
+            if ($@) {
+                warn $@;
+                return $ret;
+            }
+        }
+        $self->__logwrite(
+            5,
+            'Option change',
+            $key   ? $key   : '',
+            $ret   ? $ret   : '',
+            $value ? $value : ''
+        );
+    }
+    return $ret;
 }
 
 sub __literal_query {
-  # This actually makes a query
-  # All of the other related query functions (eventually) call this
-  my($self,$sql,@bind_values)= @_;
-  my $sth;
-  if ($self->opt('saveSQL')) {
-    my @bind_copy = @bind_values;
-    $self->{'lastsql'} = $sql;
-    $self->{'lastsql'} =~ s/\?/$self->quote(shift(@bind_copy))/eg;
-  }
-  if ($self->opt('useCached')) {
-    $sth=$self->{'dbh'}->prepare_cached($sql); 
-  } else {             
-    $sth=$self->{'dbh'}->prepare($sql);
-  }
-  if (!$sth) {
-    eval('use Carp;');
-    die 'DBIx::Abstract (prepare): '.$self->{'dbh'}->errstr."\n".
-        "    SQL: $sql\n".
-        "STACK TRACE\n".
-        Carp::longmess()."\n";
-  }
-  if (!$sth->execute(@bind_values)) {
-    eval('use Carp;');
-    die 'DBIx::Abstract (execute): '.$sth->errstr."\n".
-        "    SQL: $sql\n".
-        "STACK TRACE\n".
-        Carp::longmess()."\n";
-  }
-  $self->{'sth'} = $sth;
-  return $self;
+    my $self = shift;
+    # This actually makes a query
+    # All of the other related query functions (eventually) call this
+    my ( $sql, @bind_values ) = @_;
+    my $sth;
+    if ( $self->opt('saveSQL') ) {
+        my @bind_copy = @bind_values;
+        $self->{'lastsql'} = $sql;
+        $self->{'lastsql'} =~ s/\?/$self->quote(shift(@bind_copy))/eg;
+    }
+    if ( $self->opt('useCached') ) {
+        $sth = $self->{'dbh'}->prepare_cached($sql);
+    }
+    else {
+        $sth = $self->{'dbh'}->prepare($sql);
+    }
+    if ( !$sth ) {
+        eval('use Carp;');
+        die 'DBIx::Abstract (prepare): '
+          . $self->{'dbh'}->errstr . "\n"
+          . "    SQL: $sql\n"
+          . "STACK TRACE\n"
+          . Carp::longmess() . "\n";
+    }
+    if ( !$sth->execute(@bind_values) ) {
+        eval('use Carp;');
+        die 'DBIx::Abstract (execute): '
+          . $sth->errstr . "\n"
+          . "    SQL: $sql\n"
+          . "STACK TRACE\n"
+          . Carp::longmess() . "\n";
+    }
+    $self->{'sth'} = $sth;
+    return $self;
 }
 
 sub __mod_query {
-  # This is used by queries that make changes.
-  # This way we can process these tasks later if we want to.
-  my($self,$sql,@bind_params) = @_;
-  if ($self->opt('delaymods')) {
-    if ($self->{'ORIG'}) { $self = $self->{'ORIG'} }
-    push(@{$self->{'MODQUERY'}},[$sql,@bind_params]);
-  } else {
-    $self->__literal_query($sql,@bind_params);
-  }
-  return $self;
+    my $self = shift;
+    # This is used by queries that make changes.
+    # This way we can process these tasks later if we want to.
+    my ( $sql, @bind_params ) = @_;
+    if ( $self->opt('delaymods') ) {
+        if ( $self->{'ORIG'} ) { $self = $self->{'ORIG'} }
+        push( @{ $self->{'MODQUERY'} }, [ $sql, @bind_params ] );
+    }
+    else {
+        $self->__literal_query( $sql, @bind_params );
+    }
+    return $self;
 }
 
 sub query {
-  my($self,$sql,@bind_params) = @_;
-  if (ref($sql) eq 'HASH') {
-    @bind_params = @{$$sql{'bind_params'}};
-    $sql = $$sql{'sql'};
-  }
-  $self->__logwrite_sql(3,$sql,@bind_params);
-  return $self->__literal_query($sql,@bind_params);
+    my $self = shift;
+    my ( $sql, @bind_params ) = @_;
+    if ( ref($sql) eq 'HASH' ) {
+        @bind_params = @{ $$sql{'bind_params'} };
+        $sql         = $$sql{'sql'};
+    }
+    $self->__logwrite_sql( 3, $sql, @bind_params );
+    return $self->__literal_query( $sql, @bind_params );
 }
 
 sub __logwrite {
-  # This writes to the log file if the loglevel is greater then 0
-  # and the logfile has been set.
-  # LOGLEVEL: 0 -- Fatal errors only
-  # LOGLEVEL: 1 -- Modifications
-  # LOGLEVEL: 2 -- And selects
-  # LOGLEVEL: 3 -- And user created queries
-  # LOGLEVEL: 4 -- And results of queries
-  # LOGLEVEL: 5 -- And other misc commands
-  # LOGLEVEL: 6 -- Internals of commands
-  my($self,$level,@log) = @_;
-  $level = 5 if $level+0 ne $level;
-  if ($#log==-1) { @log = ('Something happened') }
-  # Write a line to the log file
-  if ($self->opt('logfile') && $self->opt('loglevel')>=$level) {
-    local *LOG;
-    if (open(LOG,'>>'.$self->opt('logfile'))) {
-      print LOG join(chr(9),scalar(localtime()),$level,@log),"\n";
-      close(LOG);
+    my $self = shift;
+    # This writes to the log file if the loglevel is greater then 0
+    # and the logfile has been set.
+    # LOGLEVEL: 0 -- Fatal errors only
+    # LOGLEVEL: 1 -- Modifications
+    # LOGLEVEL: 2 -- And selects
+    # LOGLEVEL: 3 -- And user created queries
+    # LOGLEVEL: 4 -- And results of queries
+    # LOGLEVEL: 5 -- And other misc commands
+    # LOGLEVEL: 6 -- Internals of commands
+    my ( $level, @log ) = @_;
+    $level = 5 if $level + 0 ne $level;
+    if ( $#log == -1 ) { @log = ('Something happened') }
+
+    # Write a line to the log file
+    if ( $self->opt('logfile') && $self->opt('loglevel') >= $level ) {
+        local *LOG;
+        if ( open( LOG, '>>' . $self->opt('logfile') ) ) {
+            print LOG join( chr(9), scalar( localtime() ), $level, @log ), "\n";
+            close(LOG);
+        }
     }
-  }
-  return $self;
+    return $self;
 }
 
 sub __logwrite_sql {
-  my($self,$level,$sql,@bind) = @_;
-  $level ||= 5;
-  if (!defined($sql)) {
-    $sql = 'Something happened, and I thought it was SQL';
-  }
-  # Write a line to the log file
-  if ($self->opt('logfile') && $self->opt('loglevel')>=$level) {
-    local *LOG;
-    if (open(LOG,'>>'.$self->opt('logfile'))) {
-      my $logsql = $sql;
-      my @bind_copy = @bind;
-      $logsql =~ s/\?/$self->quote(shift(@bind_copy))/eg;
-      unshift(@bind_copy,'EXTRA BOUND PARAMS: ') if @bind_copy;
-      print LOG join(chr(9),scalar(localtime()),$level,$logsql,@bind_copy),"\n";
-      close(LOG);
+    my $self = shift;
+    my ($level, $sql, @bind ) = @_;
+    $level ||= 5;
+    if ( !defined($sql) ) {
+        $sql = 'Something happened, and I thought it was SQL';
     }
-  }
-  return $self;
+
+    # Write a line to the log file
+    if ( $self->opt('logfile') && $self->opt('loglevel') >= $level ) {
+        local *LOG;
+        if ( open( LOG, '>>' . $self->opt('logfile') ) ) {
+            my $logsql    = $sql;
+            my @bind_copy = @bind;
+            $logsql =~ s/\?/$self->quote(shift(@bind_copy))/eg;
+            unshift( @bind_copy, 'EXTRA BOUND PARAMS: ' ) if @bind_copy;
+            print LOG
+              join( chr(9), scalar( localtime() ), $level, $logsql,
+                @bind_copy ), "\n";
+            close(LOG);
+        }
+    }
+    return $self;
 }
 
 sub run_delayed {
-  my($self) = @_;
-  if ($self->{'ORIG'}) { $self = $self->{'ORIG'} }
-  $self->__logwrite(5,'Run delayed');
-  foreach (@{$self->{'MODQUERY'}}) {
-    $self->__literal_query(@$_);
-  }
-  return $self;
+    my $self = shift;
+    if ( $self->{'ORIG'} ) { $self = $self->{'ORIG'} }
+    $self->__logwrite( 5, 'Run delayed' );
+    foreach ( @{ $self->{'MODQUERY'} } ) {
+        $self->__literal_query(@$_);
+    }
+    return $self;
 }
 
 sub __where {
-  my($self,$where,$int) = @_;
-  # $where == This is either a scalar, hash-ref or array-ref
-  #           If it is a scalar, then it is used as the literal where.
-  #           If it is a hash-ref then the key is the field to check,
-  #           the value is either a literal value to compare equality to,
-  #           or an array-ref to an array of operator and value.
-  #             {first=>'joe',age=>['>',26],last=>['like',q|b'%|]}
-  #           Would produce:
-  #             WHERE first=? AND age > ? AND last is like ?
-  #             and add joe, 26 and b'% to the bind_params list
-  #           If it is an array-ref then it is an array of hash-refs and
-  #           connectors:
-  #             [{first=>'joe',age=>['>',26]},'OR',{last=>['like',q|b'%|]}]
-  #           Would produce:
-  #             WHERE (first=? AND age > ?) OR (last like ?)
-  #             and add joe, 26 and b'% to the bind_params list
-  my $result='';
-  my @bind_params;
-  $int ||= 0;
+    my $self = shift;
+    my ($where, $int ) = @_;
 
-  if ($int > 20) {
-    $self->__logwrite(0,'Where parser iterated too deep (limit of 20)');
-    die "DBIx::Abstract Where parser iterated too deep, circular reference in where clause?\n";
-  }
+    # $where == This is either a scalar, hash-ref or array-ref
+    #           If it is a scalar, then it is used as the literal where.
+    #           If it is a hash-ref then the key is the field to check,
+    #           the value is either a literal value to compare equality to,
+    #           or an array-ref to an array of operator and value.
+    #             {first=>'joe',age=>['>',26],last=>['like',q|b'%|]}
+    #           Would produce:
+    #             WHERE first=? AND age > ? AND last is like ?
+    #             and add joe, 26 and b'% to the bind_params list
+    #           If it is an array-ref then it is an array of hash-refs and
+    #           connectors:
+    #             [{first=>'joe',age=>['>',26]},'OR',{last=>['like',q|b'%|]}]
+    #           Would produce:
+    #             WHERE (first=? AND age > ?) OR (last like ?)
+    #             and add joe, 26 and b'% to the bind_params list
+    my $result = '';
+    my @bind_params;
+    $int ||= 0;
 
-  $self->__logwrite(6,'Where called with: ',$where);
-
-  if (ref($where) eq 'ARRAY') {
-    $self->__logwrite(7,'Where is array...');
-    foreach (@$where) {
-      if (ref($_) eq 'HASH') {
-        $self->__logwrite(7,'Found where component of type hash');
-        my($moreres,@morebind) = $self->__where_hash($_);
-        $result .= "($moreres)" if $moreres;
-        push(@bind_params,@morebind);
-      } elsif (ref($_) eq 'ARRAY') {
-        $self->__logwrite(7,'Found where component of type array');
-        my($moreres,@morebind) = $self->__where($_,$int+1);
-        $result .= "($moreres)" if $moreres;
-        push(@bind_params,@morebind);
-      } else {
-        $self->__logwrite(7,'Found where component of type literal: '.$_);
-        $result .= " $_ ";
-      }
+    if ( $int > 20 ) {
+        $self->__logwrite( 0, 'Where parser iterated too deep (limit of 20)' );
+        die
+"DBIx::Abstract Where parser iterated too deep, circular reference in where clause?\n";
     }
-  } elsif (ref($where) eq 'HASH') {
-    $self->__logwrite(7,'Where is hash...');
-    my($moreres,@morebind) = $self->__where_hash($where);
-    $result = $moreres;
-    @bind_params = @morebind;
-  } else {
-    $self->__logwrite(7,'Where is literal...');
-    $result = $where;
-  }
-  $self->__logwrite(6,$int?0:1,'Where returning with: ',$result);
-  if ($result) {
-    return ($int?'':' WHERE ').$result,@bind_params;
-  } else {
-    return '';
-  }
+
+    $self->__logwrite( 6, 'Where called with: ', $where );
+
+    if ( ref($where) eq 'ARRAY' ) {
+        $self->__logwrite( 7, 'Where is array...' );
+        foreach (@$where) {
+            if ( ref($_) eq 'HASH' ) {
+                $self->__logwrite( 7, 'Found where component of type hash' );
+                my ( $moreres, @morebind ) = $self->__where_hash($_);
+                $result .= "($moreres)" if $moreres;
+                push( @bind_params, @morebind );
+            }
+            elsif ( ref($_) eq 'ARRAY' ) {
+                $self->__logwrite( 7, 'Found where component of type array' );
+                my ( $moreres, @morebind ) = $self->__where( $_, $int + 1 );
+                $result .= "($moreres)" if $moreres;
+                push( @bind_params, @morebind );
+            }
+            else {
+                $self->__logwrite( 7,
+                    'Found where component of type literal: ' . $_ );
+                $result .= " $_ ";
+            }
+        }
+    }
+    elsif ( ref($where) eq 'HASH' ) {
+        $self->__logwrite( 7, 'Where is hash...' );
+        my ( $moreres, @morebind ) = $self->__where_hash($where);
+        $result      = $moreres;
+        @bind_params = @morebind;
+    }
+    else {
+        $self->__logwrite( 7, 'Where is literal...' );
+        $result = $where;
+    }
+    $self->__logwrite( 6, $int ? 0 : 1, 'Where returning with: ', $result );
+    if ($result) {
+        return ( $int ? '' : ' WHERE ' ) . $result, @bind_params;
+    }
+    else {
+        return '';
+    }
 }
 
 sub __where_hash {
-  my($self,$where) = @_;
-  my $ret;
-  my @bind_params;
-  $self->__logwrite(7,'Processing hash');
-  foreach (keys(%$where)) {
-    $self->__logwrite(7,'key',$_,'value',$$where{$_});
-    if ($ret) { $ret .= ' AND ' }
-    $ret .= "$_ ";
-    if (ref($$where{$_}) eq 'ARRAY') {
-      $self->__logwrite(7,'Value is array',@{$$where{$_}});
-      $ret .= $$where{$_}[0].' ';
-      if (ref($$where{$_}[1]) eq 'SCALAR') {
-        $ret .= ${$$where{$_}[1]};
-      } else {
-        $ret .= '?';
-        push(@bind_params,$$where{$_}[1]);
-      }
-    } else {
-      $self->__logwrite(7,'Value is literal',$$where{$_});
-      if (defined($$where{$_})) {
-        $ret .= '= ';
-        if (ref($$where{$_}) eq 'SCALAR') {
-          $ret .= ${$$where{$_}};
-        } else {
-          $ret .= '?';
-          push(@bind_params,$$where{$_});
+    my $self = shift;
+    my ($where ) = @_;
+    my $ret;
+    my @bind_params;
+    $self->__logwrite( 7, 'Processing hash' );
+    foreach ( keys(%$where) ) {
+        $self->__logwrite( 7, 'key', $_, 'value', $$where{$_} );
+        if ($ret) { $ret .= ' AND ' }
+        $ret .= "$_ ";
+        if ( ref( $$where{$_} ) eq 'ARRAY' ) {
+            $self->__logwrite( 7, 'Value is array', @{ $$where{$_} } );
+            $ret .= $$where{$_}[0] . ' ';
+            if ( ref( $$where{$_}[1] ) eq 'SCALAR' ) {
+                $ret .= ${ $$where{$_}[1] };
+            }
+            else {
+                $ret .= '?';
+                push( @bind_params, $$where{$_}[1] );
+            }
         }
-      } else {
-        $ret .= 'IS NULL';
-      }
+        else {
+            $self->__logwrite( 7, 'Value is literal', $$where{$_} );
+            if ( defined( $$where{$_} ) ) {
+                $ret .= '= ';
+                if ( ref( $$where{$_} ) eq 'SCALAR' ) {
+                    $ret .= ${ $$where{$_} };
+                }
+                else {
+                    $ret .= '?';
+                    push( @bind_params, $$where{$_} );
+                }
+            }
+            else {
+                $ret .= 'IS NULL';
+            }
+        }
     }
-  }
-  if ($ret ne '()') {
-    return $ret,@bind_params;
-  } else {
-    return '';
-  }
+    if ( $ret ne '()' ) {
+        return $ret, @bind_params;
+    }
+    else {
+        return '';
+    }
 }
 
 sub delete {
-  my($self,$table,$where) = @_;
-  # $table == Name of table to update
-  # $where == One of my handy-dandy standard where's.  See __where.
-  my($sql,@keys,$i);
-  if (ref($table)) {
-    $where = $$table{'where'};
-    $table = $$table{'table'};
-  }
+    my $self = shift;
+    my ($table, $where ) = @_;
 
-  $table or die 'DBIx::Abstract: delete must have table';
+    # $table == Name of table to update
+    # $where == One of my handy-dandy standard where's.  See __where.
+    if ( ref($table) ) {
+        $where = $table->{'where'};
+        $table = $table->{'table'};
+    }
 
-  my($res,@bind_params) = $self->__where($where);
-  $sql = "DELETE FROM $table".$res;
-  $self->__logwrite_sql(1,$sql,@bind_params);
-  $self->__mod_query($sql,@bind_params);
-  return $self;
+    $table or die 'DBIx::Abstract: delete must have table';
+
+    my ( $res, @bind_params ) = $self->__where($where);
+    my $sql = "DELETE FROM $table" . $res;
+    $self->__logwrite_sql( 1, $sql, @bind_params );
+    $self->__mod_query( $sql, @bind_params );
+    return $self;
 }
 
 sub insert {
-  my($self,$table,$fields)=@_;
-  # $table  == Name of table to update
-  # $fields == A reference to a hash of field/value pairs containing the
-  #            new values for those fields.
-  my(@bind_params);
-  if (ref($table)) {
-    $fields = $$table{'fields'};
-    $table = $$table{'table'};
-  }
+    my $self = shift;
+    my ($table, $fields ) = @_;
 
-  $table or die 'DBIx::Abstract: insert must have table';
-
-  my $sql = "INSERT INTO $table ";
-  if (ref($fields) eq 'HASH') {
-    my @keys = keys(%$fields);
-    my @values = values(%$fields);
-    $#keys>-1 or die 'DBIx::Abstract: insert must have fields';
-    $sql .= '(';
-    for (my $i=0;$i<=$#keys;$i++) {
-      if ($i) { $sql .= ',' }
-      $sql .= ' '.$keys[$i];
+    # $table  == Name of table to update
+    # $fields == A reference to a hash of field/value pairs containing the
+    #            new values for those fields.
+    my (@bind_params);
+    if ( ref($table) ) {
+        $fields = $$table{'fields'};
+        $table  = $$table{'table'};
     }
-    $sql .= ') VALUES (';
-    for (my $i=0;$i<=$#keys;$i++) {
-      if ($i) { $sql .= ', ' }
-      if (defined($values[$i])) {
-        if (ref($values[$i]) eq 'SCALAR') {
-          $sql .= ${$values[$i]};
-        } elsif (ref($values[$i]) eq 'ARRAY') {
-          $sql .= $values[$i][0];
-        } else {
-          $sql .= '?';
-          push(@bind_params,$values[$i]);
+
+    $table or die 'DBIx::Abstract: insert must have table';
+
+    my $sql = "INSERT INTO $table ";
+    if ( ref($fields) eq 'HASH' ) {
+        my @keys   = keys(%$fields);
+        my @values = values(%$fields);
+        $#keys > -1 or die 'DBIx::Abstract: insert must have fields';
+        $sql .= '(';
+        for ( my $i = 0 ; $i <= $#keys ; $i++ ) {
+            if ($i) { $sql .= ',' }
+            $sql .= ' ' . $keys[$i];
         }
-      } else {
-        $sql .= 'NULL';
-      }
+        $sql .= ') VALUES (';
+        for ( my $i = 0 ; $i <= $#keys ; $i++ ) {
+            if ($i) { $sql .= ', ' }
+            if ( defined( $values[$i] ) ) {
+                if ( ref( $values[$i] ) eq 'SCALAR' ) {
+                    $sql .= ${ $values[$i] };
+                }
+                elsif ( ref( $values[$i] ) eq 'ARRAY' ) {
+                    $sql .= $values[$i][0];
+                }
+                else {
+                    $sql .= '?';
+                    push( @bind_params, $values[$i] );
+                }
+            }
+            else {
+                $sql .= 'NULL';
+            }
+        }
+        $sql .= ')';
     }
-    $sql .= ')';
-  } elsif (!ref($fields) and $fields) {
-    $sql .= $fields;
-  } else {
-    die 'DBIx::Abstract: insert must have fields';
-  }
-  $self->__logwrite_sql(1,$sql,@bind_params);
-  $self->__mod_query($sql,@bind_params);
-  return $self;
+    elsif ( !ref($fields) and $fields ) {
+        $sql .= $fields;
+    }
+    else {
+        die 'DBIx::Abstract: insert must have fields';
+    }
+    $self->__logwrite_sql( 1, $sql, @bind_params );
+    $self->__mod_query( $sql, @bind_params );
+    return $self;
 }
 
 sub replace {
-  my($self,$table,$fields)=@_;
-  # $table  == Name of table to update
-  # $fields == A reference to a hash of field/value pairs containing the
-  #            new values for those fields.
-  my(@bind_params);
-  if (ref($table)) {
-    $fields = $$table{'fields'};
-    $table = $$table{'table'};
-  }
+    my $self = shift;
+    my ($table, $fields ) = @_;
 
-  $table or die 'DBIx::Abstract: insert must have table';
-
-  my $sql = "REPLACE INTO $table ";
-  if (ref($fields) eq 'HASH') {
-    my @keys = keys(%$fields);
-    my @values = values(%$fields);
-    $#keys>-1 or die 'DBIx::Abstract: insert must have fields';
-    $sql .= '(';
-    for (my $i=0;$i<=$#keys;$i++) {
-      if ($i) { $sql .= ',' }
-      $sql .= ' '.$keys[$i];
+    # $table  == Name of table to update
+    # $fields == A reference to a hash of field/value pairs containing the
+    #            new values for those fields.
+    my (@bind_params);
+    if ( ref($table) ) {
+        $fields = $$table{'fields'};
+        $table  = $$table{'table'};
     }
-    $sql .= ') VALUES (';
-    for (my $i=0;$i<=$#keys;$i++) {
-      if ($i) { $sql .= ', ' }
-      if (defined($values[$i])) {
-        if (ref($values[$i]) eq 'SCALAR') {
-          $sql .= ${$values[$i]};
-        } elsif (ref($values[$i]) eq 'ARRAY') {
-          $sql .= $values[$i][0];
-        } else {
-          $sql .= '?';
-          push(@bind_params,$values[$i]);
+
+    $table or die 'DBIx::Abstract: insert must have table';
+
+    my $sql = "REPLACE INTO $table ";
+    if ( ref($fields) eq 'HASH' ) {
+        my @keys   = keys(%$fields);
+        my @values = values(%$fields);
+        $#keys > -1 or die 'DBIx::Abstract: insert must have fields';
+        $sql .= '(';
+        for ( my $i = 0 ; $i <= $#keys ; $i++ ) {
+            if ($i) { $sql .= ',' }
+            $sql .= ' ' . $keys[$i];
         }
-      } else {
-        $sql .= 'NULL';
-      }
+        $sql .= ') VALUES (';
+        for ( my $i = 0 ; $i <= $#keys ; $i++ ) {
+            if ($i) { $sql .= ', ' }
+            if ( defined( $values[$i] ) ) {
+                if ( ref( $values[$i] ) eq 'SCALAR' ) {
+                    $sql .= ${ $values[$i] };
+                }
+                elsif ( ref( $values[$i] ) eq 'ARRAY' ) {
+                    $sql .= $values[$i][0];
+                }
+                else {
+                    $sql .= '?';
+                    push( @bind_params, $values[$i] );
+                }
+            }
+            else {
+                $sql .= 'NULL';
+            }
+        }
+        $sql .= ')';
     }
-    $sql .= ')';
-  } elsif (!ref($fields) and $fields) {
-    $sql .= $fields;
-  } else {
-    die 'DBIx::Abstract: insert must have fields';
-  }
-  $self->__logwrite_sql(1,$sql,@bind_params);
-  $self->__mod_query($sql,@bind_params);
-  return $self;
+    elsif ( !ref($fields) and $fields ) {
+        $sql .= $fields;
+    }
+    else {
+        die 'DBIx::Abstract: insert must have fields';
+    }
+    $self->__logwrite_sql( 1, $sql, @bind_params );
+    $self->__mod_query( $sql, @bind_params );
+    return $self;
 }
 
 sub update {
-  my($self,$table,$fields,$where) = @_;
-  # $table   == Name of table to update
-  # $fields  == A reference to a hash of field/value pairs containing the
-  #             new values for those fields.
-  # $where == One of my handy-dandy standard where's.  See __where.
-  my($sql,@keys,@values,$i);
-  my(@bind_params);
-  if (ref($table)) {
-    $where = $$table{'where'};
-    $fields = $$table{'fields'};
-    $table = $$table{'table'};
-  }
+    my $self = shift;
+    my ($table, $fields, $where ) = @_;
 
-  # "If you don't know what to do, don't do anything."
-  #          -- St. O'Ffender, _Return of the Roller Blade Seven_
-  $table or die 'DBIx::Abstract: update must have table';
-
-  $sql = "UPDATE $table SET";
-  if (ref($fields) eq 'HASH') {
-    @keys = keys(%$fields);
-    @values = values(%$fields);
-    $#keys>-1 or die 'DBIx::Abstract: update must have fields';
-    for ($i=0;$i<=$#keys;$i++) {
-      if ($i) { $sql .= ',' }
-      $sql .= ' '.$keys[$i].'=';
-      if (defined($values[$i])) {
-          if (ref($values[$i]) eq 'SCALAR') {
-            $sql .= ${$values[$i]};
-          } else {
-            $sql .= '?';
-            push(@bind_params,$values[$i]);
-          }
-      } else {
-          $sql .= 'NULL';
-      }
+    # $table   == Name of table to update
+    # $fields  == A reference to a hash of field/value pairs containing the
+    #             new values for those fields.
+    # $where == One of my handy-dandy standard where's.  See __where.
+    my ( $sql, @keys, @values, $i );
+    my (@bind_params);
+    if ( ref($table) ) {
+        $where  = $$table{'where'};
+        $fields = $$table{'fields'};
+        $table  = $$table{'table'};
     }
-  } elsif (!ref($fields) and $fields) {
-    $sql .= " $fields";
-  } else {
-    die 'DBIx::Abstract: update must have fields';
-  }
 
-  my($moresql,@morebind) = $self->__where($where);
-  $sql .= $moresql;
-  push(@bind_params,@morebind);
+    # "If you don't know what to do, don't do anything."
+    #          -- St. O'Ffender, _Return of the Roller Blade Seven_
+    $table or die 'DBIx::Abstract: update must have table';
 
-  $self->__logwrite_sql(1,$sql,@bind_params);
-  $self->__mod_query($sql,@bind_params);
-  return $self;
+    $sql = "UPDATE $table SET";
+    if ( ref($fields) eq 'HASH' ) {
+        @keys   = keys(%$fields);
+        @values = values(%$fields);
+        $#keys > -1 or die 'DBIx::Abstract: update must have fields';
+        for ( $i = 0 ; $i <= $#keys ; $i++ ) {
+            if ($i) { $sql .= ',' }
+            $sql .= ' ' . $keys[$i] . '=';
+            if ( defined( $values[$i] ) ) {
+                if ( ref( $values[$i] ) eq 'SCALAR' ) {
+                    $sql .= ${ $values[$i] };
+                }
+                else {
+                    $sql .= '?';
+                    push( @bind_params, $values[$i] );
+                }
+            }
+            else {
+                $sql .= 'NULL';
+            }
+        }
+    }
+    elsif ( !ref($fields) and $fields ) {
+        $sql .= " $fields";
+    }
+    else {
+        die 'DBIx::Abstract: update must have fields';
+    }
+
+    my ( $moresql, @morebind ) = $self->__where($where);
+    $sql .= $moresql;
+    push( @bind_params, @morebind );
+
+    $self->__logwrite_sql( 1, $sql, @bind_params );
+    $self->__mod_query( $sql, @bind_params );
+    return $self;
 }
 
 sub select {
-  my $self = shift;
-  my($fields,$table,$where,$order,$extra) = @_;
-  # $fields  == A hash ref with the following values
-  #   OR
-  # $fields  == Fields to get data on, usually a *. (either scalar or
-  #             array ref)
-  # $table   == Name of table to update
-  # $where   == One of my handy-dandy standard where's.  See __where.
-  # $order   == The order to output in
-  my $group;#== The key to group by, only available in hash mode
-  my($sql,@keys,$i,$join);
-  if (ref($fields) eq 'HASH') {
-    my $field;
-    foreach (keys(%$fields)) {
-      my $field = $_;
-      $field = lc($field);
-      if (/^-(.*)/) { $field = $1 }
-      $$fields{$field} = $$fields{$_};
-    }
-    $table = $$fields{'table'} || $$fields{'tables'};
-    $where = $$fields{'where'};
-    $order = $$fields{'order'};
-    $group = $$fields{'group'};
-    $extra = $$fields{'extra'};
-    $join  = $$fields{'join'};
+    my $self = shift;
+    my ( $fields, $table, $where, $order, $extra ) = @_;
 
-    $fields = $$fields{'fields'} || $$fields{'field'};
-  }
-  $sql = 'SELECT ';
-  if (ref($fields) eq 'ARRAY') {
-    $sql .= join(',',@$fields);
-  } else {
-    $sql .= $fields;
-  }
-  if (ref($table) eq 'ARRAY') {
-    if ($#$table>-1) {
-      $sql.=' FROM '.join(',',@$table);
-    }
-  } else {
-      $sql.=" FROM $table" if $table;
-  }
+    # $fields  == A hash ref with the following values
+    #   OR
+    # $fields  == Fields to get data on, usually a *. (either scalar or
+    #             array ref)
+    # $table   == Name of table to update
+    # $where   == One of my handy-dandy standard where's.  See __where.
+    # $order   == The order to output in
+    my $group;    #== The key to group by, only available in hash mode
+    my ( $sql, @keys, $i, $join );
+    if ( ref($fields) eq 'HASH' ) {
+        foreach ( keys(%$fields) ) {
+            my $field = $_;
+            $field = lc($field);
+            if (/^-(.*)/) { $field = $1 }
+            $$fields{$field} = $$fields{$_};
+        }
+        $table = $$fields{'table'} || $$fields{'tables'};
+        $where = $$fields{'where'};
+        $order = $$fields{'order'};
+        $group = $$fields{'group'};
+        $extra = $$fields{'extra'};
+        $join  = $$fields{'join'};
 
-  my($addsql,@bind_params);
-  if (defined($where)) {
-    ($addsql) = $self->__where($where,1);
-    unless ($addsql) {
-      $where = undef;
+        $fields = $$fields{'fields'} || $$fields{'field'};
     }
-  }
-
-  if ($join) {
-    unless (ref($join)) {
-      $join = [$join];
+    $sql = 'SELECT ';
+    if ( ref($fields) eq 'ARRAY' ) {
+        $sql .= join( ',', @$fields );
     }
-    if ($where) {
-      $where = [$where];
-    } else {
-      $where = [];
+    else {
+        $sql .= $fields;
     }
-    foreach (@{$join}) {
-      push(@$where,'and') if $#$where>-1;
-      push(@$where, [$_]);
+    if ( ref($table) eq 'ARRAY' ) {
+        if ( $#$table > -1 ) {
+            $sql .= ' FROM ' . join( ',', @$table );
+        }
     }
-  }
-
-  if (defined($where)) {
-    ($addsql,@bind_params) = $self->__where($where);
-    $sql .= $addsql;
-  }
-
-  if (ref($group) eq 'ARRAY') {
-    if ($#$group>-1) {
-      $sql .= ' GROUP BY '.join(',',@$group);
+    else {
+        $sql .= " FROM $table" if $table;
     }
-  } elsif ($group) {
-    $sql .= " GROUP BY $group";
-  }
 
-  if (ref($order) eq 'ARRAY') {
-    if ($#$order>-1) {
-      $sql .= ' ORDER BY '.join(',',@$order);
+    my ( $addsql, @bind_params );
+    if ( defined($where) ) {
+        ($addsql) = $self->__where( $where, 1 );
+        unless ($addsql) {
+            $where = undef;
+        }
     }
-  } elsif ($order) {
-    $sql .= " ORDER BY $order";
-  }
 
-  if ($extra) {
-    $sql .= ' '.$extra;
-  }
+    if ($join) {
+        unless ( ref($join) ) {
+            $join = [$join];
+        }
+        if ($where) {
+            $where = [$where];
+        }
+        else {
+            $where = [];
+        }
+        foreach ( @{$join} ) {
+            push( @$where, 'and' ) if $#$where > -1;
+            push( @$where, [$_] );
+        }
+    }
 
-  $self->__logwrite_sql(2,$sql,@bind_params);
-  $self->__literal_query($sql,@bind_params);
-  return $self;
+    if ( defined($where) ) {
+        ( $addsql, @bind_params ) = $self->__where($where);
+        $sql .= $addsql;
+    }
+
+    if ( ref($group) eq 'ARRAY' ) {
+        if ( $#$group > -1 ) {
+            $sql .= ' GROUP BY ' . join( ',', @$group );
+        }
+    }
+    elsif ($group) {
+        $sql .= " GROUP BY $group";
+    }
+
+    if ( ref($order) eq 'ARRAY' ) {
+        if ( $#$order > -1 ) {
+            $sql .= ' ORDER BY ' . join( ',', @$order );
+        }
+    }
+    elsif ($order) {
+        $sql .= " ORDER BY $order";
+    }
+
+    if ($extra) {
+        $sql .= ' ' . $extra;
+    }
+
+    $self->__logwrite_sql( 2, $sql, @bind_params );
+    $self->__literal_query( $sql, @bind_params );
+    return $self;
 }
 
 sub select_one_to_hashref {
-  my $self = shift;
-  # Run a select and return a hash-ref of the first
-  # record returned from the select.  Don't step
-  # on the current query, and don't keep the new
-  # one around.
-  my $db = $self->clone;
-  $self->__logwrite(2,'select_one_to_hashref');
-  $db->select(@_);
-  my $result = $db->fetchrow_hashref;
-  return undef unless $result;
-  return {%$result};
+    my $self = shift;
+
+    # Run a select and return a hash-ref of the first
+    # record returned from the select.  Don't step
+    # on the current query, and don't keep the new
+    # one around.
+    my $db = $self->clone;
+    $self->__logwrite( 2, 'select_one_to_hashref' );
+    $db->select(@_);
+    my $result = $db->fetchrow_hashref;
+    return undef unless $result;
+    return {%$result};
 }
 
 sub select_one_to_arrayref {
-  my $self = shift;
-  my $db = $self->clone;
-  $self->__logwrite(2,'select_one _to_arrayref');
-  $db->select(@_);
-  my $result = $db->fetchrow_arrayref;
-  return undef unless $result;
-  return [@$result];
+    my $self = shift;
+    my $db   = $self->clone;
+    $self->__logwrite( 2, 'select_one _to_arrayref' );
+    $db->select(@_);
+    my $result = $db->fetchrow_arrayref;
+    return undef unless $result;
+    return [@$result];
 }
 
 sub select_one_to_array {
-  my $self = shift;
-  my $db = $self->clone;
-  $self->__logwrite(2,'select_one_to_arrayref');
-  $db->select(@_);
-  my $result = $db->fetchrow_arrayref;
-  return undef unless $result;
-  return @$result;
+    my $self = shift;
+    my $db   = $self->clone;
+    $self->__logwrite( 2, 'select_one_to_arrayref' );
+    $db->select(@_);
+    my $result = $db->fetchrow_arrayref;
+    return undef unless $result;
+    return @$result;
 }
 
 sub select_all_to_hashref {
-  my $self = shift;
-  # Run a select and return a hash-ref.
-  # The hash-ref's key is the first
-  # field and it's value is the second.
-  # And it won't step on a current query.
-  my $db = $self->clone;
-  $self->__logwrite(2,'select_all_to_hash');
-  $db->select(@_);
-  my $result = $db->fetchall_arrayref();
-  return undef unless $result;
-  my %to_ret;
-  foreach (@$result) {
-    if ($#$_>1) {
-      my $key = shift(@$_);
-      $to_ret{$key} = [@$_];
-    } else {
-      $to_ret{$$_[0]} = $$_[1];
+    my $self = shift;
+
+    # Run a select and return a hash-ref.
+    # The hash-ref's key is the first
+    # field and it's value is the second.
+    # And it won't step on a current query.
+    my $db = $self->clone;
+    $self->__logwrite( 2, 'select_all_to_hash' );
+    $db->select(@_);
+    my $result = $db->fetchall_arrayref();
+    return undef unless $result;
+    my %to_ret;
+    foreach (@$result) {
+
+        if ( $#$_ > 1 ) {
+            my $key = shift(@$_);
+            $to_ret{$key} = [@$_];
+        }
+        else {
+            $to_ret{ $$_[0] } = $$_[1];
+        }
     }
-  }
-  $db = undef;
-  return {%to_ret};
+    $db = undef;
+    return {%to_ret};
 }
 
 sub fetchrow_hashref {
-  my $self = shift;
-  $self->__logwrite(4,'fetchrow_hashref');
-  my $row = $self->{'sth'}->fetchrow_hashref(@_);
-  unless (defined($row)) {
-      $self->{'sth'}->finish;
-  }
-  return $row;
+    my $self = shift;
+    $self->__logwrite( 4, 'fetchrow_hashref' );
+    my $row = $self->{'sth'}->fetchrow_hashref(@_);
+    unless ( defined($row) ) {
+        $self->{'sth'}->finish;
+    }
+    return $row;
 }
 
 sub fetchrow_hash {
-  my $self = shift;
-  my $result = $self->fetchrow_hashref(@_);
-  $self->__logwrite(4,'fetchrow_hash');
-  if ($result) {
-    return %$result;
-  } else {
-    return ();
-  }
+    my $self   = shift;
+    my $result = $self->fetchrow_hashref(@_);
+    $self->__logwrite( 4, 'fetchrow_hash' );
+    if ($result) {
+        return %$result;
+    }
+    else {
+        return ();
+    }
 }
 
 sub fetchrow_arrayref {
-  my $self = shift;
-  $self->__logwrite(4,'fetchrow_arrayref');
-  my $row = $self->{'sth'}->fetchrow_arrayref(@_);
-  unless (defined($row)) {
-      $self->{'sth'}->finish;
-  }
-  return $row;
+    my $self = shift;
+    $self->__logwrite( 4, 'fetchrow_arrayref' );
+    my $row = $self->{'sth'}->fetchrow_arrayref(@_);
+    unless ( defined($row) ) {
+        $self->{'sth'}->finish;
+    }
+    return $row;
 }
 
 sub fetchrow_array {
-  my $self = shift;
-  $self->__logwrite(4,'fetchrow_array');
-  my @row = $self->{'sth'}->fetchrow_array(@_);
-  if ($#row == -1) {
-      $self->{'sth'}->finish;
-  }
-  return @row;
+    my $self = shift;
+    $self->__logwrite( 4, 'fetchrow_array' );
+    my @row = $self->{'sth'}->fetchrow_array(@_);
+    if ( $#row == -1 ) {
+        $self->{'sth'}->finish;
+    }
+    return @row;
 }
 
 sub fetchall_arrayref {
-  my $self = shift;
-  $self->__logwrite(4,'fetchall_arrayref');
-  return $self->{'sth'}->fetchall_arrayref(@_);
+    my $self = shift;
+    $self->__logwrite( 4, 'fetchall_arrayref' );
+    return $self->{'sth'}->fetchall_arrayref(@_);
 }
 
 sub dataseek {
-  my $self = shift;
-  my($pos) = @_;
-  if (ref($pos)) {
-    $pos = $$pos{'pos'};
-  }
-  if ($self->{'connect'}{'driver'} eq 'mysql' or 
-      $self->{'connect'}{'driver'} eq 'msql') {
-    return $self->{'sth'}->func($pos, 'dataseek');
-  } else {
-    die 'Dataseek is not supported by your database '.$self->{'connect'}{'driver'};
-  }
+    my $self = shift;
+    my ($pos) = @_;
+    if ( ref($pos) ) {
+        $pos = $$pos{'pos'};
+    }
+    if (   $self->{'connect'}{'driver'} eq 'mysql'
+        or $self->{'connect'}{'driver'} eq 'msql' )
+    {
+        return $self->{'sth'}->func( $pos, 'dataseek' );
+    }
+    else {
+        die 'Dataseek is not supported by your database '
+          . $self->{'connect'}{'driver'};
+    }
 }
 
 sub rows {
-  my $self = shift;
-  $self->__logwrite(5,'rows');
-  return $self->{'sth'}->rows;
+    my $self = shift;
+    $self->__logwrite( 5, 'rows' );
+    return $self->{'sth'}->rows;
 }
 
 sub errstr {
-  my($class) = @_;
-  my $self;
-  if (ref($class)) { $self = $class }
-  if ($self and $self->{'dbh'}) {
-    return $self->{'dbh'}->errstr;
-  } else {
-    return $DBI::errstr;
-  }
+    my $class = shift;
+    my $self;
+    if ( ref($class) ) { $self = $class }
+    if ( $self and $self->{'dbh'} ) {
+        return $self->{'dbh'}->errstr;
+    }
+    else {
+        return $DBI::errstr;
+    }
 }
 
 sub err {
-  my($class) = @_;
-  my $self;
-  if (ref($class)) { $self = $class }
-  if ($self and $self->{'dbh'}) {
-    return $self->{'dbh'}->err;
-  } else {
-    return $DBI::err;
-  }
+    my $class = shift;
+    my $self;
+    if ( ref($class) ) { $self = $class }
+    if ( $self and $self->{'dbh'} ) {
+        return $self->{'dbh'}->err;
+    }
+    else {
+        return $DBI::err;
+    }
 }
 
 #### Mysql compatibility functions
@@ -951,66 +1050,67 @@ sub err {
 #### These may go away.
 
 sub fetchrow {
-  my($self) = shift;
-  return $self->fetchrow_array(@_);
+    my $self = shift;
+    return $self->fetchrow_array(@_);
 }
 
 sub fetchhash {
-  my($self) = shift;
-  return $self->fetchrow_hash(@_);
+    my $self = shift;
+    return $self->fetchrow_hash(@_);
 }
 
 sub numrows {
-  my($self) = shift;
-  return $self->rows(@_);
+    my $self = shift;
+    return $self->rows(@_);
 }
 
 sub quote {
-  my($self) = shift;
-  $self->{'dbh'}->quote(@_);
+    my $self = shift;
+    $self->{'dbh'}->quote(@_);
 }
 
 sub disconnect {
-  my $self = shift;
-  $self->{'Active'} = 0;
-  return $self->{'dbh'}->disconnect();
+    my $self = shift;
+    $self->{'Active'} = 0;
+    return $self->{'dbh'}->disconnect();
 }
 
 sub AUTOLOAD {
-  ### This will delegate calls for selected methods from the DBH and STH
-  ### objects.  This allows users limited access to their functionality.
-  my($self) = shift;
-  # $self == 'Class=REFERENCE'
-  my($class) = split(/=/,$self);
-  # $AUTOLOAD == 'Class::method'
-  my $method = $AUTOLOAD; my $sr = '^'.$class.'::'; $method =~ s/$sr//;
-  
-  # These are just space separated lists of methods that may be passed
-  # through to the dbh or sth objects respectively.
-  #
-  # If anything ends up in here we should probably make a separate function
-  # for it (if only to keep the logging working properly).
-  my $DBHVALIDMETHODS = 
-       'commit '.
-       'rollback '.
-       'trace';
-  my $STHVALIDMETHODS =
-       'finish '.
-       'bind_col '.
-       'bind_columns';
-       
-  # If this is a dbh method, pass it through
-  if ($DBHVALIDMETHODS =~ /\b$method\b/) {
-    $self->__logwrite(5,"dbh->$method");
-    return $self->{'dbh'}->$method(@_) if $self->{'dbh'};
-  # If this is an sth method, pass it through
-  } elsif ($STHVALIDMETHODS =~ /\b$method\b/) {
-    $self->__logwrite(5,"sth->$method");
-    return $self->{'sth'}->$method(@_) if $self->{'sth'};
-  } else {
-    $self->__logwrite(0,"Unknown method: class=$class method=$method");
-    die "($$)Unknown method: class=$class method=$method\n";
-  }
+    ### This will delegate calls for selected methods from the DBH and STH
+    ### objects.  This allows users limited access to their functionality.
+    my $self = shift;
+
+    # $self == 'Class=REFERENCE'
+    my ($class) = split( /=/, $self );
+
+    # $AUTOLOAD == 'Class::method'
+    my $method = $AUTOLOAD;
+    my $sr     = '^' . $class . '::';
+    $method =~ s/$sr//;
+
+    # These are just space separated lists of methods that may be passed
+    # through to the dbh or sth objects respectively.
+    #
+    # If anything ends up in here we should probably make a separate function
+    # for it (if only to keep the logging working properly).
+    my $DBHVALIDMETHODS = 'commit ' . 'rollback ' . 'trace';
+    my $STHVALIDMETHODS = 'finish ' . 'bind_col ' . 'bind_columns';
+
+    # If this is a dbh method, pass it through
+    if ( $DBHVALIDMETHODS =~ /\b$method\b/ ) {
+        $self->__logwrite( 5, "dbh->$method" );
+        return $self->{'dbh'}->$method(@_) if $self->{'dbh'};
+
+        # If this is an sth method, pass it through
+    }
+    elsif ( $STHVALIDMETHODS =~ /\b$method\b/ ) {
+        $self->__logwrite( 5, "sth->$method" );
+        return $self->{'sth'}->$method(@_) if $self->{'sth'};
+    }
+    else {
+        $self->__logwrite( 0, "Unknown method: class=$class method=$method" );
+        die "($$)Unknown method: class=$class method=$method\n";
+    }
 }
 
 1;
@@ -1040,6 +1140,8 @@ for it's query syntax).  They're maintained and widely used.
       # ...
     }
   }
+  
+  my $id = 23;
 
   my ($name) = $db->select('name','table',{id=>$id})->fetchrow_array;
 
