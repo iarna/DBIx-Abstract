@@ -131,7 +131,7 @@ sub connect {
     $self->{'dbh'} = $dbh;
     $self->opt( loglevel => 0 );
     foreach ( keys(%$options) ) {
-        $self->opt( $_, $$options{$_} );
+        $self->opt( $_, $options->{$_} );
     }
     my @log;
     if ( exists( $config->{'dsn'} ) ) {
@@ -287,8 +287,8 @@ sub clone {
     my $self    = shift;
     my $class   = ref($self);
     my $newself = {%$self};
-    delete( $$newself{'CLONES'} );
-    delete( $$newself{'ORIG'} );
+    delete( $newself->{'CLONES'} );
+    delete( $newself->{'ORIG'} );
     bless $newself, $class;
     if ( !$self->{'ORIG'} ) {
         $newself->{'ORIG'} = $self;
@@ -315,8 +315,8 @@ sub opt {
     my $self = shift;
     my ( $key, $value ) = @_;
     if ( ref($key) ) {
-        $value = $$key{'value'};
-        $key   = $$key{'key'};
+        $value = $key->{'value'};
+        $key   = $key->{'key'};
     }
     my $ret;
     if ( $valid_opts{$key} ) {
@@ -406,8 +406,8 @@ sub query {
     my $self = shift;
     my ( $sql, @bind_params ) = @_;
     if ( ref($sql) eq 'HASH' ) {
-        @bind_params = @{ $$sql{'bind_params'} };
-        $sql         = $$sql{'sql'};
+        @bind_params = @{ $sql->{'bind_params'} };
+        $sql         = $sql->{'sql'};
     }
     $self->__logwrite_sql( 3, $sql, @bind_params );
     return $self->__literal_query( $sql, @bind_params );
@@ -553,30 +553,30 @@ sub __where_hash {
     my @bind_params;
     $self->__logwrite( 7, 'Processing hash' );
     foreach ( keys(%$where) ) {
-        $self->__logwrite( 7, 'key', $_, 'value', $$where{$_} );
+        $self->__logwrite( 7, 'key', $_, 'value', $where->{$_} );
         if ($ret) { $ret .= ' AND ' }
         $ret .= "$_ ";
-        if ( ref( $$where{$_} ) eq 'ARRAY' ) {
-            $self->__logwrite( 7, 'Value is array', @{ $$where{$_} } );
-            $ret .= $$where{$_}[0] . ' ';
-            if ( ref( $$where{$_}[1] ) eq 'SCALAR' ) {
-                $ret .= ${ $$where{$_}[1] };
+        if ( ref( $where->{$_} ) eq 'ARRAY' ) {
+            $self->__logwrite( 7, 'Value is array', @{ $where->{$_} } );
+            $ret .= $where->{$_}[0] . ' ';
+            if ( ref( $where->{$_}[1] ) eq 'SCALAR' ) {
+                $ret .= ${ $where->{$_}[1] };
             }
             else {
                 $ret .= '?';
-                push( @bind_params, $$where{$_}[1] );
+                push( @bind_params, $where->{$_}[1] );
             }
         }
         else {
-            $self->__logwrite( 7, 'Value is literal', $$where{$_} );
-            if ( defined( $$where{$_} ) ) {
+            $self->__logwrite( 7, 'Value is literal', $where->{$_} );
+            if ( defined( $where->{$_} ) ) {
                 $ret .= '= ';
-                if ( ref( $$where{$_} ) eq 'SCALAR' ) {
-                    $ret .= ${ $$where{$_} };
+                if ( ref( $where->{$_} ) eq 'SCALAR' ) {
+                    $ret .= ${ $where->{$_} };
                 }
                 else {
                     $ret .= '?';
-                    push( @bind_params, $$where{$_} );
+                    push( @bind_params, $where->{$_} );
                 }
             }
             else {
@@ -621,8 +621,8 @@ sub insert {
     #            new values for those fields.
     my (@bind_params);
     if ( ref($table) ) {
-        $fields = $$table{'fields'};
-        $table  = $$table{'table'};
+        $fields = $table->{'fields'};
+        $table  = $table->{'table'};
     }
 
     $table or die 'DBIx::Abstract: insert must have table';
@@ -678,8 +678,8 @@ sub replace {
     #            new values for those fields.
     my (@bind_params);
     if ( ref($table) ) {
-        $fields = $$table{'fields'};
-        $table  = $$table{'table'};
+        $fields = $table->{'fields'};
+        $table  = $table->{'table'};
     }
 
     $table or die 'DBIx::Abstract: insert must have table';
@@ -737,9 +737,9 @@ sub update {
     my ( $sql, @keys, @values, $i );
     my (@bind_params);
     if ( ref($table) ) {
-        $where  = $$table{'where'};
-        $fields = $$table{'fields'};
-        $table  = $$table{'table'};
+        $where  = $table->{'where'};
+        $fields = $table->{'fields'};
+        $table  = $table->{'table'};
     }
 
     # "If you don't know what to do, don't do anything."
@@ -796,22 +796,22 @@ sub select {
     # $where   == One of my handy-dandy standard where's.  See __where.
     # $order   == The order to output in
     my $group;    #== The key to group by, only available in hash mode
-    my ( $sql, @keys, $i, $join );
+    my ( $sql, $join );
     if ( ref($fields) eq 'HASH' ) {
         foreach ( keys(%$fields) ) {
             my $field = $_;
             $field = lc($field);
             if (/^-(.*)/) { $field = $1 }
-            $$fields{$field} = $$fields{$_};
+            $fields->{$field} = $fields->{$_};
         }
-        $table = $$fields{'table'} || $$fields{'tables'};
-        $where = $$fields{'where'};
-        $order = $$fields{'order'};
-        $group = $$fields{'group'};
-        $extra = $$fields{'extra'};
-        $join  = $$fields{'join'};
+        $table = $fields->{'table'} || $fields->{'tables'};
+        $where = $fields->{'where'};
+        $order = $fields->{'order'};
+        $group = $fields->{'group'};
+        $extra = $fields->{'extra'};
+        $join  = $fields->{'join'};
 
-        $fields = $$fields{'fields'} || $$fields{'field'};
+        $fields = $fields->{'fields'} || $fields->{'field'};
     }
     $sql = 'SELECT ';
     if ( ref($fields) eq 'ARRAY' ) {
@@ -940,7 +940,7 @@ sub select_all_to_hashref {
             $to_ret{$key} = [@$_];
         }
         else {
-            $to_ret{ $$_[0] } = $$_[1];
+            $to_ret{ $_->[0] } = $_->[1];
         }
     }
     $db = undef;
@@ -999,7 +999,7 @@ sub dataseek {
     my $self = shift;
     my ($pos) = @_;
     if ( ref($pos) ) {
-        $pos = $$pos{'pos'};
+        $pos = $pos->{'pos'};
     }
     if (   $self->{'connect'}{'driver'} eq 'mysql'
         or $self->{'connect'}{'driver'} eq 'msql' )
@@ -1181,8 +1181,6 @@ Notable features include:
 =head1 METHODS
 
 Unless otherwise mentioned all methods return the database handle.
-
-=over 5
 
 =head2 connect
 
@@ -1604,13 +1602,11 @@ Would produce:
 With joe, %foo%, 26 and 30 passed as bind values.
 
 
-=back
-
-=over 5
-
 =head1 SUPPORTED DBD DRIVERS
 
 These drivers have been reported to work:
+
+=over
 
 =item * mysql (development environment)
 
@@ -1620,13 +1616,13 @@ These drivers have been reported to work:
 
 =item * XBase
 
+=back
+
 =head2
 
 Any driver that uses ODBC syntax should work using the hash ref method. 
 With other drivers you should pass the DBI data source instead (this method
 will work with all drivers.)
-
-=back
 
 =head1 CHANGES SINCE LAST RELEASE
 
