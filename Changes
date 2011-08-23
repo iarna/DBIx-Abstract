@@ -1,5 +1,10 @@
 Revision history for Perl extension DBIx::Abstract.
 
+1.01   2011-08-23
+        - Update to modern build practices.
+        - Make tests work with SQLite, so they don't need to be configured.
+        - Document its depricated status.
+
 1.006  2005-04-23
         - Fixed a bug discovered by Jan Martin Mathiassen
           <reaper@mindriot.as>.  If you pass in a password but no username

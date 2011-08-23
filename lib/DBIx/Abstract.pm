@@ -1,8 +1,10 @@
+# ABSTRACT: DBI SQL abstraction
 package DBIx::Abstract;
 
 use DBI;
 use Scalar::Util 'weaken';
 use strict;
+use warnings;
 use vars qw( $AUTOLOAD $VERSION $LAST_CHANGE );
 
 BEGIN {
@@ -1016,9 +1018,11 @@ __END__
 
 =pod
 
-=head1 NAME
+=head1 DEPRICATED
 
-DBIx::Abstract - DBI SQL abstraction
+We highly recommend that you use something like L<SQL::Abstract>, which was
+inspired by this module.  Or even L<DBIx::Class> (which uses SQL::Abstract
+for it's query syntax).  They're maintained and widely used.
 
 =head1 SYNOPSIS
 
