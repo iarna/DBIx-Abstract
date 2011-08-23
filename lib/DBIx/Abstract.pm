@@ -1027,7 +1027,7 @@ for it's query syntax).  They're maintained and widely used.
 =head1 SYNOPSIS
 
   use DBIx::Abstract;
-  $db = DBIx::Abstract->connect({
+  my $db = DBIx::Abstract->connect({
     driver=>'mydriver',
     host=>'myhost.org',
     dbname=>'mydb',
@@ -1036,18 +1036,18 @@ for it's query syntax).  They're maintained and widely used.
     });
 
   if ($db->select('*','table')->rows) {
-    while ($data = $db->fetchrow_hashref) {
-      ...
+    while (my $data = $db->fetchrow_hashref) {
+      # ...
     }
   }
 
-  ($name) = $db->select('name','table',{id=>$id})->fetchrow_array;
+  my ($name) = $db->select('name','table',{id=>$id})->fetchrow_array;
 
-  ***
+  ###
   
   $db = DBIx::Abstract->connect( { driver=>'csv', f_name=>'foo/' } );
   
-  ***
+  ###
   
   $db = DBIx::Abstract->connect({
     dsn=>'dbi:someotherdb:so_db_name=mydb',
