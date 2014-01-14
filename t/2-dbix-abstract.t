@@ -149,53 +149,51 @@ if (open(LOG,'test.log')) {
             push(@data,$_);
         }
     }
-    foreach (\@log,\@data) {
-        map({s/^[^\t]+/DATE/g} @$_);
-        map({s/^(DATE\t5\t(?:Rec|C)onnect\t).*$/$1CONNECT ARGS/} @$_);
-        map({s/^(DATE\t5\tconnected\t)\n$/${1}0\n/} @$_);
-    }
+    s/^[^\t]+/DATE/g for @log, @data;
+    s/^(DATE\t5\t(?:Rec|C)onnect\t).*$/$1CONNECT ARGS/ for @log, @data;
+    s/^(DATE\t5\tconnected\t)\n$/${1}0\n/ for @log, @data;
     if (is_deeply( \@log, \@data, "SQL log matches expectations" )) {
         unlink('test.log');
     }
 }
 
 __DATA__
-Tue Aug 23 12:40:28 2011	5	Option change	logfile		test.log
-Tue Aug 23 12:40:28 2011	5	Connect	dsn=>dbi:SQLite:dbname=testfile.sql
-Tue Aug 23 12:40:28 2011	5	connected	
-Tue Aug 23 12:40:28 2011	5	reconnect	success
-Tue Aug 23 12:40:28 2011	5	Reconnect
-Tue Aug 23 12:40:28 2011	5	connected	1
-Tue Aug 23 12:40:28 2011	5	connected	1
-Tue Aug 23 12:40:28 2011	5	Cloned
-Tue Aug 23 12:40:28 2011	3	create table foo (id int null,name char(30) not null,value char(30) null)
-Tue Aug 23 12:40:28 2011	3	create table bar (id int null,foo_id int null,name char(30) not null)
-Tue Aug 23 12:40:29 2011	1	INSERT INTO foo ( value, name, id) VALUES ('value1', 'test1', '1')
-Tue Aug 23 12:40:29 2011	1	INSERT INTO bar ( name, foo_id, id) VALUES ('test1', '4', '1')
-Tue Aug 23 12:40:29 2011	1	INSERT INTO foo ( value, name, id) VALUES ('value2', 'test2', '2')
-Tue Aug 23 12:40:29 2011	1	INSERT INTO bar ( name, foo_id, id) VALUES ('test2', '3', '2')
-Tue Aug 23 12:40:29 2011	1	INSERT INTO foo ( value, name, id) VALUES ('value3', 'test3', '3')
-Tue Aug 23 12:40:30 2011	1	INSERT INTO bar ( name, foo_id, id) VALUES ('test3', '2', '3')
-Tue Aug 23 12:40:30 2011	1	INSERT INTO foo ( value, name, id) VALUES ('value4', 'test4', '4')
-Tue Aug 23 12:40:30 2011	1	INSERT INTO bar ( name, foo_id, id) VALUES ('test4', '1', '4')
-Tue Aug 23 12:40:30 2011	1	UPDATE foo SET value='bonk', name='blat' WHERE id = '2'
-Tue Aug 23 12:40:30 2011	2	SELECT * FROM foo WHERE id < '10'
-Tue Aug 23 12:40:30 2011	5	rows
-Tue Aug 23 12:40:30 2011	4	fetchrow_array
-Tue Aug 23 12:40:30 2011	4	fetchrow_array
-Tue Aug 23 12:40:30 2011	4	fetchrow_array
-Tue Aug 23 12:40:30 2011	4	fetchrow_array
-Tue Aug 23 12:40:30 2011	4	fetchrow_array
-Tue Aug 23 12:40:30 2011	0	Where parser iterated too deep (limit of 20)
-Tue Aug 23 12:40:30 2011	2	SELECT * FROM foo WHERE (id < '10') and ((name = 'blat') or (value = 'bonk'))
-Tue Aug 23 12:40:30 2011	5	rows
-Tue Aug 23 12:40:30 2011	4	fetchrow_array
-Tue Aug 23 12:40:30 2011	4	fetchrow_array
-Tue Aug 23 12:40:30 2011	2	SELECT count(foo.id) FROM foo,bar WHERE (foo.id < '10') and ( foo.id = bar.foo_id ) GROUP BY bar.name
-Tue Aug 23 12:40:30 2011	5	rows
-Tue Aug 23 12:40:30 2011	1	DELETE FROM foo WHERE id like '%'
-Tue Aug 23 12:40:30 2011	5	rows
-Tue Aug 23 12:40:30 2011	3	drop table foo
-Tue Aug 23 12:40:30 2011	3	drop table bar
-Tue Aug 23 12:40:31 2011	5	connected	1
-Tue Aug 23 12:40:31 2011	5	connected	
+Tue Jan 14 12:42:50 2014	5	Option change	logfile		test.log
+Tue Jan 14 12:42:50 2014	5	Connect	dsn=>dbi:SQLite:dbname=testfile.sql
+Tue Jan 14 12:42:50 2014	5	connected	
+Tue Jan 14 12:42:50 2014	5	reconnect	success
+Tue Jan 14 12:42:50 2014	5	Reconnect
+Tue Jan 14 12:42:50 2014	5	connected	1
+Tue Jan 14 12:42:50 2014	5	connected	1
+Tue Jan 14 12:42:50 2014	5	Cloned
+Tue Jan 14 12:42:50 2014	3	create table foo (id int null,name char(30) not null,value char(30) null)
+Tue Jan 14 12:42:50 2014	3	create table bar (id int null,foo_id int null,name char(30) not null)
+Tue Jan 14 12:42:50 2014	1	INSERT INTO foo ( id, name, value) VALUES ('1', 'test1', 'value1')
+Tue Jan 14 12:42:50 2014	1	INSERT INTO bar ( foo_id, id, name) VALUES ('4', '1', 'test1')
+Tue Jan 14 12:42:50 2014	1	INSERT INTO foo ( id, name, value) VALUES ('2', 'test2', 'value2')
+Tue Jan 14 12:42:50 2014	1	INSERT INTO bar ( foo_id, id, name) VALUES ('3', '2', 'test2')
+Tue Jan 14 12:42:50 2014	1	INSERT INTO foo ( id, name, value) VALUES ('3', 'test3', 'value3')
+Tue Jan 14 12:42:50 2014	1	INSERT INTO bar ( foo_id, id, name) VALUES ('2', '3', 'test3')
+Tue Jan 14 12:42:50 2014	1	INSERT INTO foo ( id, name, value) VALUES ('4', 'test4', 'value4')
+Tue Jan 14 12:42:50 2014	1	INSERT INTO bar ( foo_id, id, name) VALUES ('1', '4', 'test4')
+Tue Jan 14 12:42:50 2014	1	UPDATE foo SET name='blat', value='bonk' WHERE id = '2'
+Tue Jan 14 12:42:50 2014	2	SELECT * FROM foo WHERE id < '10'
+Tue Jan 14 12:42:50 2014	5	rows
+Tue Jan 14 12:42:50 2014	4	fetchrow_array
+Tue Jan 14 12:42:50 2014	4	fetchrow_array
+Tue Jan 14 12:42:50 2014	4	fetchrow_array
+Tue Jan 14 12:42:50 2014	4	fetchrow_array
+Tue Jan 14 12:42:50 2014	4	fetchrow_array
+Tue Jan 14 12:42:50 2014	0	Where parser iterated too deep (limit of 20)
+Tue Jan 14 12:42:50 2014	2	SELECT * FROM foo WHERE (id < '10') and ((name = 'blat') or (value = 'bonk'))
+Tue Jan 14 12:42:50 2014	5	rows
+Tue Jan 14 12:42:50 2014	4	fetchrow_array
+Tue Jan 14 12:42:50 2014	4	fetchrow_array
+Tue Jan 14 12:42:50 2014	2	SELECT count(foo.id) FROM foo,bar WHERE (foo.id < '10') and ( foo.id = bar.foo_id ) GROUP BY bar.name
+Tue Jan 14 12:42:50 2014	5	rows
+Tue Jan 14 12:42:50 2014	1	DELETE FROM foo WHERE id like '%'
+Tue Jan 14 12:42:50 2014	5	rows
+Tue Jan 14 12:42:50 2014	3	drop table foo
+Tue Jan 14 12:42:50 2014	3	drop table bar
+Tue Jan 14 12:42:50 2014	5	connected	1
+Tue Jan 14 12:42:50 2014	5	connected	
