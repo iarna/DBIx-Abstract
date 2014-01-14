@@ -30,8 +30,10 @@ Notable features include:
 COPYRIGHT
 ---------
 
-Portions copyright 2001-2002,2011,2013 by Rebecca Turner
+Portions copyright 2001-2002-2014 by Rebecca Turner
+
 Portions copyright 2000-2001 by Adelphia Business Solutions
+
 Portions copyright 1998-2000 by the Maine Internetworks (MINT)
 
 This program is free software; you can redistribute it and/or modify it
