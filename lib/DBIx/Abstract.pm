@@ -1,5 +1,6 @@
 # ABSTRACT: DBI SQL abstraction
 package DBIx::Abstract;
+
 use DBI;
 use Scalar::Util 'weaken';
 use Check::ISA qw( obj_does );
@@ -1628,34 +1629,26 @@ will work with all drivers.)
 
 =over 2
 
-=item * Fixed a bug discovered by Jan Martin Mathiassen
-<reaper@mindriot.as>.  If you pass in a password but no username it's
-supposed to ignore the password.  Instead it was clearing it in the hash
-that you passed in but still using it.
+=item * Updated source pointers to github.
 
-=item * Removed Test::More and Test::Builder from the distribution-- put
-Test::Simple in the prerequisites.
+=item * Fixed hash randomization related test failure
 
 =back
 
 =head1 AUTHOR
 
-Rebecca Turner <winter@cpan.org>
+Rebecca Turner <me@re-becca.org>
 
 =head1 COPYRIGHT AND LICENSE
 
-Portions copyright 2001-2002,2011 by Rebecca Turner
+Portions copyright 2001-2014 by Rebecca Turner
 
 Portions copyright 2000-2001 by Adelphia Business Solutions
 
-Copyright 1998-2000 by the Maine Internetworks (MINT)
+Portions copyright 1998-2000 by the Maine Internetworks (MINT)
 
-This program is free software; you can redistribute it and/or modify it
-under the same terms as Perl itself.
-
-=head1 SEE ALSO
-
-http://sourceforge.net/projects/dbix-abstract/
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.
 
 L<DBI(3)>
 
