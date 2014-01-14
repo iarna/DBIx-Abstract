@@ -1,5 +1,9 @@
 Revision history for Perl extension DBIx::Abstract.
 
+1.03   2014-01-14
+        - We were explicitly returning undef for failure, which is basically
+          always wrong.  Corrected this.
+
 1.02   2014-01-14
 	- Update documentation, etc, to point to github version
 	- Make SQL generation deterministic, rather than depending on hash
