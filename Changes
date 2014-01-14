@@ -1,5 +1,12 @@
 Revision history for Perl extension DBIx::Abstract.
 
+1.02   2014-01-14
+	- Update documentation, etc, to point to github version
+	- Make SQL generation deterministic, rather than depending on hash
+	  order, to ease testing and predictability.
+	- Misc minor code cleanups.
+	- Move to more of my standard Dist::Zilla config.
+
 1.01   2011-08-23
         - Update to modern build practices.
         - Make tests work with SQLite, so they don't need to be configured.
