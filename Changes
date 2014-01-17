@@ -1,5 +1,8 @@
 Revision history for Perl extension DBIx::Abstract.
 
+1.04   2014-01-15
+	- Explicitly order options hashes to make log output deterministic.
+
 1.03   2014-01-14
         - We were explicitly returning undef for failure, which is basically
           always wrong.  Corrected this.
