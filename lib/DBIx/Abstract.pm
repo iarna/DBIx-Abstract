@@ -31,7 +31,7 @@ sub ___drivers {
     }
 
     my @keys;
-    foreach ( keys %$config ) {
+    foreach ( sort keys %$config ) {
         next if /^user$/;
         next if /^password$/;
         next if /^driver$/;
@@ -131,7 +131,7 @@ sub connect {
     }
     $self->{'dbh'} = $dbh;
     $self->opt( loglevel => 0 );
-    foreach ( keys %$options ) {
+    foreach ( sort keys %$options ) {
         $self->opt( $_, $options->{$_} );
     }
     my @log;

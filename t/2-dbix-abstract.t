@@ -158,7 +158,7 @@ if (open(LOG,'test.log')) {
 }
 
 __DATA__
-Tue Jan 14 12:42:50 2014	5	Option change	logfile		test.log
+Tue Jan 14 12:42:50 2014	5	Option change	loglevel		5
 Tue Jan 14 12:42:50 2014	5	Connect	dsn=>dbi:SQLite:dbname=testfile.sql
 Tue Jan 14 12:42:50 2014	5	connected	
 Tue Jan 14 12:42:50 2014	5	reconnect	success
