@@ -1118,7 +1118,7 @@ __END__
 
 =pod
 
-=head1 DEPRICATED
+=head1 DEPRECATED
 
 We highly recommend that you use something like L<SQL::Abstract>, which was
 inspired by this module.  Or even L<DBIx::Class> (which uses SQL::Abstract
